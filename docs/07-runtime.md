@@ -261,6 +261,112 @@ Small objects (< 32KB) are allocated from size-class buckets:
 > Malloc". Google Performance Tools.
 > https://google.github.io/tcmalloc/design.html
 
+### Go Does NOT Use C's malloc()
+
+A common misconception is that Go's garbage collector or allocator
+uses C's `malloc()`. **It does not.** Go has its own complete memory
+management stack that talks directly to the Linux kernel via the
+`mmap` system call, bypassing libc entirely.
+
+Here is the verified call chain from Go source to hardware:
+
+```
+Go code: x := new(MyStruct)
+         │
+         ▼
+runtime·mallocgc()            ← Go code (src/runtime/malloc.go:46)
+  │                              Go's own allocator, NOT C's malloc
+  │
+  ├── Tiny (< 16B, no ptrs)?  → Bump pointer in per-P tiny block
+  │                              No syscall, no lock. Just: ptr += size
+  │
+  ├── Small (< 32KB)?         → Get from MCache free list (per-P)
+  │   │                          No syscall, no lock. Just: pop from list
+  │   └── MCache empty?       → Refill from MCentral (one lock)
+  │       └── MCentral empty? → Get span from MHeap
+  │           └── MHeap empty? ──┐
+  │                               │
+  └── Large (≥ 32KB)? ───────────┘
+                                  │
+                                  ▼
+runtime·sysAlloc()              ← C code (src/runtime/mem_linux.c:63)
+  │                                Calls runtime·mmap()
+  │  p = runtime·mmap(nil, n,
+  │      PROT_READ|PROT_WRITE,
+  │      MAP_ANON|MAP_PRIVATE, -1, 0);
+  │
+  ▼
+runtime·mmap()                  ← ASSEMBLY (src/runtime/sys_linux_amd64.s:231)
+  │
+  │  MOVQ  addr+0(FP), DI      // arg 1: address (nil = kernel chooses)
+  │  MOVQ  n+8(FP), SI         // arg 2: size
+  │  MOVL  prot+16(FP), DX     // arg 3: PROT_READ|PROT_WRITE
+  │  MOVL  flags+20(FP), R10   // arg 4: MAP_ANON|MAP_PRIVATE
+  │  MOVL  fd+24(FP), R8       // arg 5: -1 (no file)
+  │  MOVL  off+28(FP), R9      // arg 6: 0 (no offset)
+  │  MOVL  $9, AX              // syscall number 9 = mmap
+  │  SYSCALL                    // trap into kernel
+  │  RET
+  │
+  ▼
+Linux kernel mmap handler       ← Kernel space
+  │  Allocates virtual memory pages
+  │  Updates process page tables
+  │  Returns virtual address to userspace
+  ▼
+Hardware MMU                     ← CPU hardware
+   Maps virtual addresses → physical RAM
+   Page faults handled transparently by kernel
+```
+
+### Why Not Use C's malloc()?
+
+Go avoids C's `malloc()` for several critical reasons:
+
+1. **GC integration**: Go's allocator tracks every allocation for
+   garbage collection. C's malloc knows nothing about GC.
+
+2. **No libc dependency**: Go binaries are **statically linked**
+   without libc. This makes cross-compilation trivial and binaries
+   fully self-contained.
+
+3. **Goroutine-aware**: The allocator uses per-P caches (MCache)
+   that align with Go's M:P:G scheduler, eliminating lock
+   contention. C's malloc uses per-thread caches that don't
+   match Go's scheduling model.
+
+4. **Precise pointer tracking**: Go's allocator knows exactly which
+   words in each allocation are pointers (via type information from
+   the compiler). C's malloc treats all memory as opaque bytes.
+
+5. **Size class optimization**: Go's 67 size classes are tuned for
+   Go's allocation patterns (small structs, slices, strings), not
+   C's patterns.
+
+### The Four Layers of Memory
+
+| Layer | File | Language | What It Does |
+|-------|------|----------|-------------|
+| **Go allocator** | `malloc.go` | Go | Free lists, size classes, tiny allocator |
+| **OS interface** | `mem_linux.c` | C | Calls mmap/munmap/madvise |
+| **Syscall wrapper** | `sys_linux_amd64.s` | Assembly | `SYSCALL` instruction to kernel |
+| **Linux kernel** | (kernel) | C | Virtual memory, page tables, physical RAM |
+
+### Syscalls Used by Go's Memory System
+
+| Syscall | Number | Go Wrapper | Purpose |
+|---------|--------|-----------|---------|
+| `mmap` | 9 | `runtime·mmap` | Allocate virtual memory pages |
+| `munmap` | 11 | `runtime·munmap` | Release virtual memory pages |
+| `madvise` | 28 | `runtime·madvise` | Hint: `MADV_DONTNEED` (return pages to OS) |
+| `mincore` | 27 | `runtime·mincore` | Check if pages are mapped |
+| `brk` | 12 | *(not used)* | Go does NOT use brk/sbrk |
+
+**Note**: Go uses `mmap` exclusively, never `brk`/`sbrk`. The `brk`
+syscall is what traditional C `malloc` implementations (like glibc's
+ptmalloc) use for small allocations. Go skips this entirely and uses
+anonymous `mmap` for everything.
+
 ---
 
 ## Channels (chan.c)
