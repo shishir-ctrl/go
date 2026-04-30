@@ -396,62 +396,89 @@ copying (all pointers are at known offsets).
 
 ## Part 5: Study Plan for Learning Assembly
 
-### Phase 1: x86-64 Fundamentals (1-2 weeks)
+### Phase 1: Learn to READ Assembly First (1 week)
 
-**Read these free resources:**
+Start by **reading** compiler output, not writing assembly from scratch.
+This is the fastest path to understanding the Go compiler.
 
-1. **"x86-64 Assembly Language Programming with Ubuntu"**
-   by Ed Jorgensen (free PDF textbook)
-   http://www.egr.unlv.edu/~ed/x86.html
+1. **"The Faker's Guide to Reading (x86) Assembly Language"**
+   by Tim Debug — **Start here**
+   https://www.timdbg.com/posts/fakers-guide-to-assembly/
+   *(Teaches reading compiler output using Compiler Explorer.)*
 
-2. **"An Introduction to x86_64 Assembly Language"**
-   by Chris Rose, on 0xAX's Linux Insides
-   https://0xax.gitbooks.io/linux-insides/content/
+2. **"How to Read Assembly Language"** by Scott Wolchok
+   https://wolchok.org/posts/how-to-read-assembly-language/
+   *(Practical approach to instruction patterns and program flow.)*
 
-3. **Intel x86-64 Instruction Reference**:
-   https://www.felixcloutier.com/x86/
-   *(Searchable HTML version of Intel's manual — bookmark this)*
+3. **"Learning to Read x86 Assembly Language"** by Pat Shaughnessy
+   https://patshaughnessy.net/2016/11/26/learning-to-read-x86-assembly-language
+   *(Real code examples, explains AT&T suffixes b/w/l/q.)*
 
 **Practice**: Use https://godbolt.org (Compiler Explorer) to see
 how C code maps to assembly. Compare with Go output.
 
-### Phase 2: Plan 9 Assembly Specifics (1 week)
+### Phase 2: x86-64 Fundamentals (1-2 weeks)
 
-4. **Go Assembler Guide** (official):
+4. **"x86-64 Assembly Language Programming with Ubuntu"**
+   by Ed Jorgensen, Ph.D. (free PDF textbook, 24 chapters)
+   http://www.egr.unlv.edu/~ed/assembly64.pdf
+   Also at: https://open.umn.edu/opentextbooks/textbooks/733
+
+5. **CS107 Stanford x86-64 Reference Sheet** (one-page cheat sheet)
+   https://web.stanford.edu/class/cs107/resources/x86-64-reference.pdf
+
+6. **Exercism x86-64 Assembly Track** (114 free exercises)
+   https://exercism.org/tracks/x86-64-assembly
+
+7. **Intel x86-64 Instruction Reference** (bookmark this):
+   https://www.felixcloutier.com/x86/
+   *(Searchable HTML version of Intel's manual.)*
+
+### Phase 3: Plan 9 / Go Assembly Specifics (1 week)
+
+8. **"A Quick Guide to Go's Assembler"** (official, essential):
    https://go.dev/doc/asm
 
-5. **Rob Pike's "A Manual for the Plan 9 assembler"**:
-   https://9p.io/sys/doc/asm.html
+9. **Rob Pike, "The Design of the Go Assembler"** (GopherCon 2016):
+   https://go.dev/talks/2016/asm.slide
 
-6. **"A Quick Guide to Go's Assembler"** by Go team:
-   https://golang.org/doc/asm
+10. **Rob Pike, "A Manual for the Plan 9 Assembler"** (original):
+    https://9p.io/sys/doc/asm.html
 
-### Phase 3: Reading Compiler Output (ongoing)
+11. **"Go assembly language complementary reference"** by Iskander Sharipov
+    https://www.quasilyte.dev/blog/post/go-asm-complementary-reference/
+    *(Detailed tables: Go vs AT&T/Intel, instruction suffixes,
+    register naming across architectures.)*
 
-7. **Practice with every Go construct**:
-   ```bash
-   # See assembly for any Go code:
-   ./bin/go tool 6g -S yourfile.go
-   ```
+### Phase 4: Reading Go Compiler Output (ongoing)
 
-8. **Study these constructs in order:**
-   - Simple arithmetic (`a + b`)
-   - If/else (conditional jumps)
-   - For loops (backward jumps)
-   - Function calls (CALL/RET)
-   - Struct field access (memory offsets)
-   - Slice operations (3-word header)
-   - Interface method calls (itab dispatch)
-   - Goroutine creation (runtime.newproc)
-   - Channel operations (runtime.chansend)
+12. **Practice with every Go construct**:
+    ```bash
+    # See assembly for any Go code:
+    ./bin/go tool 6g -S yourfile.go
+    ```
 
-### Phase 4: x86-64 Machine Encoding (advanced)
+13. **Study these constructs in order:**
+    - Simple arithmetic (`a + b`)
+    - If/else (conditional jumps)
+    - For loops (backward jumps)
+    - Function calls (CALL/RET)
+    - Struct field access (memory offsets)
+    - Slice operations (3-word header)
+    - Interface method calls (itab dispatch)
+    - Goroutine creation (runtime.newproc)
+    - Channel operations (runtime.chansend)
 
-9. **"Intel 64 and IA-32 Architectures Software Developer's Manual"**
-   Volume 2: Instruction Set Reference
-   https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html
+### Phase 5: x86-64 Machine Encoding (advanced)
 
-10. **Understanding x86-64 instruction encoding**:
+14. **"Intel 64 and IA-32 Architectures Software Developer's Manual"**
+    Volume 2: Instruction Set Reference
+    https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html
+
+15. **x86 Opcode and Instruction Reference** (precise encoding):
+    http://ref.x86asm.net/
+
+16. **Understanding x86-64 instruction encoding**:
     ```
     48 8b 5c 24 08
     │  │  │  │  └── displacement: 0x08 (offset 8)
@@ -460,6 +487,18 @@ how C code maps to assembly. Compare with Go output.
     │  └──────── opcode: 8B = MOV r64, r/m64
     └────────── REX prefix: 48 = REX.W (64-bit operand)
     ```
+
+### Phase 6: Calling Conventions (for understanding function calls)
+
+17. **"x86-64 Calling Conventions"** at Wayne's Talk
+    https://waynestalk.com/en/x86-64-calling-conventions-en/
+
+18. **"The 64-bit x86 C Calling Convention"** by Aaron Bloomfield (UVA)
+    https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf
+
+*(Note: Go 1.4 does NOT use the System V ABI — it passes everything
+on the stack. But understanding the C convention helps when reading
+runtime code that interfaces with the OS.)*
 
 ---
 
