@@ -24,6 +24,100 @@ Plan 9 operating system. It differs from ANSI C in several ways (see
 
 ---
 
+## Build Bootstrap: From C Compiler to Full Go Toolchain
+
+Go 1.4 requires **only a C compiler (gcc or clang)** to build.
+No previous Go installation is needed. This is what makes Go 1.4
+special — starting from Go 1.5, you need Go to compile Go.
+
+The build happens in **two phases** (verified from `src/make.bash`
+and `src/cmd/dist/build.c`):
+
+### Phase 1: gcc Builds the Go Toolchain
+
+The host C compiler (gcc) compiles all the Go tools from C source:
+
+```
+gcc ──► cmd/dist/dist         Build orchestrator
+gcc ──► 6g                    Go compiler (src/cmd/6g/*.c)
+gcc ──► 6c                    Go's own Plan 9 C compiler (src/cmd/6c/*.c)
+gcc ──► 6a                    Go's assembler (src/cmd/6a/*.c)
+gcc ──► 6l                    Go's linker (src/cmd/6l/*.c)
+gcc ──► lib9, libbio, liblink Plan 9 support libraries
+```
+
+The critical line in `make.bash` (line 132):
+```bash
+${CC:-gcc} $mflag -O2 -Wall -Werror -o cmd/dist/dist cmd/dist/*.c
+```
+
+Then `dist bootstrap` uses gcc to compile the rest of the toolchain.
+After Phase 1, Go has its own complete set of compilers.
+
+### Phase 2: Go's Own Tools Compile Everything Else
+
+The freshly-built Go tools compile the **runtime** and **standard
+library**. No gcc involvement from this point:
+
+```
+                         Runtime (src/runtime/)
+                        ┌─────────────────────────────┐
+6g (Go compiler)   ──►  │ *.go  (89 files)            │
+                        │   malloc.go, proc.go,       │
+                        │   chan.go, select.go, ...    │
+                        ├─────────────────────────────┤
+6c (Go's C compiler) ►  │ *.c   (66 files)            │
+                        │   proc.c, mgc0.c, malloc.c, │
+                        │   hashmap.c, chan.c, ...     │
+                        ├─────────────────────────────┤
+6a (Go's assembler) ──► │ *.s   (71 files)            │
+                        │   sys_linux_amd64.s,        │
+                        │   asm_amd64.s, ...          │
+                        └─────────────────────────────┘
+
+6g ──► Standard library (fmt, os, net, io, ...)
+6g ──► cmd/go (the go tool itself)
+```
+
+### Important: 6c is NOT gcc
+
+`6c` is Go's **own Plan 9 C compiler**, completely separate from gcc.
+The runtime's C files are written in **Plan 9 C dialect** (uses `nil`
+instead of `NULL`, `vlong` instead of `long long`, Plan 9 headers
+instead of `<stdio.h>`). These files can only be compiled by `6c`,
+not by gcc.
+
+### The Complete Tool Set
+
+After building, Go 1.4 has these tools (at `pkg/tool/linux_amd64/`):
+
+| Tool | Purpose | Compiles |
+|------|---------|----------|
+| `6g` | Go compiler | `.go` → `.6` object files |
+| `6c` | Plan 9 C compiler | `.c` → `.6` object files |
+| `6a` | Assembler | `.s` → `.6` object files |
+| `6l` | Linker | `.6` files → executable binary |
+| `dist` | Build orchestrator | Coordinates the build |
+| `pack` | Archive tool | Creates `.a` library archives |
+| `cgo` | C interop tool | Generates C↔Go bridge code |
+| `yacc` | Parser generator | `.y` → `.go` parser code |
+
+### Why This Matters for Go 1.5+
+
+Starting with Go 1.5, the entire compiler was **rewritten in Go**.
+This creates a bootstrap chain:
+
+```
+gcc ──► Go 1.4 ──► Go 1.5 ──► Go 1.6 ──► ... ──► Go 1.24
+ C        C         Go         Go               Go
+```
+
+Every modern Go version traces its compilation lineage back to
+a C compiler through Go 1.4. This is why the Go project maintains
+Go 1.4 as the **bootstrap root** — it's the bridge from C to Go.
+
+---
+
 ## Compilation Pipeline
 
 The Go 1.4 compiler processes source code through **7 phases**, all
